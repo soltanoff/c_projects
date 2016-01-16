@@ -1,0 +1,238 @@
+%{
+//#define DEBUG_PT
+#define DEBUG_T
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <windows.h>
+#include "Property_table.h"
+#include "Table.h"
+extern int line_counter;
+void yyerror(char const* msg) { printf("\n[ERROR] Syntax error. Line: %i\n", line_counter); }
+#define YYPRINT(file, type, value) fprintf(file, "%d", value);
+
+extern FILE *yyin;
+char DEFAULT_FILENAME[] = "input.txt";
+char DEFAULT_PROP_TABLE_FILE[] = "property_table.db";
+int yylex();
+int yyparse();
+extern int SEM_ERROR;
+extern table* DEC_LIST;
+extern char* ERROR_MSG;
+extern int PROP_TAB_FAIL;
+const int MSG_SIZE = 2048;
+/* =========== table ============ */
+#ifndef _tab
+#define _tab
+typedef struct Table
+{
+	char* ident;
+	int prop;
+	struct Table* next;
+} table;/**/
+#endif
+/* ====== init prop_table ======= */
+int count = 0;
+prop_table* p_table = NULL;
+/* ============================== */
+#ifdef DEBUG_T
+void debug_table(table *list) { printf("\n\n---> Result from AXIOM:");view_table(list); printf("\n\n"); }
+#else
+void debug_table(table *list) { /*empty*/ }
+#endif
+#ifdef DEBUG_PT
+void debug_prop_table() { view_prop_table(p_table, count); printf("\n\n"); }
+#else
+void debug_prop_table() { /*empty*/ }
+#endif
+%}
+
+%no-lines
+%union { table* t; }
+%token<t>
+	G_VAR 		// "var"
+	G_STR	 	// ":string"
+	G_INT 		// ":integer"
+	G_BEGIN 	// "begin"
+	G_END		// "end"
+	G_IF		// "if"
+	G_THEN		// "then"
+	G_ELSE		// "else"
+	G_IDENT		// identifier
+	G_NUMBER	// number
+	G_STRING	// string
+	G_ASSIGN	// ":="
+	G_NXTL 		// ";"
+	G_ENDL		// "."
+	G_COMMA		// ","
+	G_PLUS		// "+"
+	G_MINUS		// "-"
+	G_MULT		// "*"
+	G_DIV		// "/"
+	G_LPAR		// "("
+	G_RPAR		// ")"
+	G_CMP		// "="
+	G_MORE		// ">"
+	G_LESS		// "<"
+	G_CMORE		// ">="
+	G_CLESS		// "<="
+	G_AND		// "and"
+	G_OR		// "or"
+	G_SPACE		// " "
+%type<t> 
+	AXIOM 
+	L_DECL
+	L_IDENT
+	BLOCK
+	ACTIONS
+	OPER
+	E
+	T
+	F
+	IFRule
+	ELSERule
+	LOG_EXPR
+	T_LOG
+	F_LOG
+	SIGN
+	LOG_OP
+	N_SPACE
+	N_Div_Mult
+	N_Plus_Minus
+
+%%
+/* 1*/AXIOM		:	L_DECL BLOCK G_ENDL	
+{ 
+	#ifdef DEBUG_T
+	printf("\n---> From L_DECL:");
+	view_table($1);
+	printf("\n---> From BLOCK:");
+	view_table($2);
+	#endif
+	int l[] = { 0, 0, 0 };
+	$$ = test(l, $1, $2, p_table, 1);
+	
+	debug_table($$);
+	
+	table* p = $$;
+	free_table(&p);
+	$$ = NULL;
+};
+/* 2*/L_DECL	:	G_VAR N_SPACE L_IDENT 				{ $$ = $3; DEC_LIST = $3; };
+/* 3*/L_IDENT	:	G_IDENT G_STR G_NXTL L_IDENT 		{ $$ = $4; add_table($1->ident, 2, &$$); }
+/* 4*/|				G_IDENT G_INT G_NXTL L_IDENT 		{ $$ = $4; add_table($1->ident, 1, &$$); }
+/* 5*/|				/*empty*/							{ $$ = NULL;};
+/* 6*/BLOCK		:	G_BEGIN ACTIONS G_END 				{ $$ = $2; };
+/* 7*/ACTIONS	:	OPER ACTIONS						{ int l[] = { 0, 0 }; $$ = test(l, $1, $2, p_table, 2); }
+/* 8*/|				/*empty*/							{ $$ = NULL;};
+/* 9*/OPER		:	BLOCK G_NXTL 						{ $$ = $1; };
+/*10*/|				G_IDENT G_ASSIGN G_STRING G_NXTL	{ $$ = $1; add_table($1->ident, 4, &$$); }
+/*11*/|				G_IDENT G_ASSIGN E G_NXTL			{ $$ = $3; add_table($1->ident, 3, &$$); };
+/*  */|				IFRule								{ $$ = $1; };
+			
+/*12*/E			:	E N_Plus_Minus T 					{ int l[] = { 0, 0 }; $$ = test(l, $1, $3, p_table, 2); }
+/*13*/|				T									{ $$ = $1; };
+/*14*/T			:	T N_Div_Mult F						{ int l[] = { 0, 0 }; $$ = test(l, $1, $3, p_table, 2); }
+/*15*/|				F									{ $$ = $1; };
+/*16*/F 		:	G_LPAR E G_RPAR						{ $$ = $2; }
+/*17*/|				G_IDENT								{ $$ = $1; $$->prop = 3; }
+/*18*/|				G_NUMBER							{ $$ = NULL; };
+
+/*19*/IFRule	:	G_IF G_SPACE LOG_EXPR G_SPACE G_THEN N_SPACE OPER N_SPACE ELSERule
+{
+	int l[] = { 0, 0, 0 };
+	table* first = test(l, $7, $9, p_table, 2);
+	$$ = test(l, $3, first, p_table, 2);
+}
+/*20*/ELSERule	:	G_ELSE N_SPACE OPER					{ $$ = $3; }
+/*  */|				/*empty*/							{ $$ = NULL; };
+
+/*21*/LOG_EXPR	:	LOG_EXPR SIGN T_LOG 				{ int l[] = { 0, 0 }; $$ = test(l, $1, $3, p_table, 2); }
+/*22*/|				T_LOG 								{ $$ = $1; };
+/*23*/T_LOG 	:	T_LOG LOG_OP F_LOG 					{ int l[] = { 0, 0 }; $$ = test(l, $1, $3, p_table, 2); }
+/*24*/|				F_LOG 								{ $$ = $1; };
+/*25*/F_LOG  	:	G_LPAR LOG_EXPR G_RPAR				{ $$ = $2; }
+/*26*/|				G_IDENT								{ $$ = $1; $$->prop = 3; }
+/*27*/|				G_NUMBER							{ $$ = NULL; };
+
+/*87*/LOG_OP	:	G_AND							{ $$ = NULL; }
+/*88*/|				G_OR 							{ $$ = NULL; };
+/*89*/SIGN		:	G_CMP							{ $$ = NULL; }
+/*90*/|				G_MORE							{ $$ = NULL; }
+/*91*/|				G_LESS							{ $$ = NULL; }
+/*92*/|				G_CMORE							{ $$ = NULL; }
+/*93*/|				G_CLESS							{ $$ = NULL; };
+/*94*/N_Div_Mult:	G_DIV							{ $$ = NULL; }
+/*95*/|				G_MULT							{ $$ = NULL; };
+/*96*/N_Plus_Minus:	G_PLUS							{ $$ = NULL; }
+/*95*/|				G_MINUS							{ $$ = NULL; };
+/*98*/N_SPACE	:	G_SPACE	N_SPACE					{ $$ = NULL; }
+/*99*/|				/*empty*/						{ $$ = NULL; };
+%%
+
+
+int main(int argc, char * argv[])
+{
+	system("title Syntactic and semantic analysis of Pascal program.");
+	#if defined(DEBUG_PT) || defined(DEBUG_T)
+	system("mode con: lines=100 cols=100");
+	#else
+	system("mode con: lines=15 cols=100"); 
+	#endif
+	line_counter = 1;
+	PROP_TAB_FAIL = NULL;
+	SEM_ERROR = NULL;
+	DEC_LIST = NULL;
+	// ==============================
+	char *prop_table_file, *io_filename;
+
+	switch(argc)
+	{
+	case 2:
+		prop_table_file = DEFAULT_PROP_TABLE_FILE;
+		io_filename = argv[1];
+		break;
+	case 3:
+		prop_table_file = argv[2];
+		io_filename = argv[1];
+		break;
+	default:
+		prop_table_file = DEFAULT_PROP_TABLE_FILE;
+		io_filename = DEFAULT_FILENAME;
+		break;
+	}
+	// ==============================
+	ERROR_MSG = (char*)malloc(sizeof(char*)*MSG_SIZE);
+	strcpy(ERROR_MSG, "");
+	
+	get_prop_table(prop_table_file, &p_table, &count);
+	if (!PROP_TAB_FAIL)
+	{
+		printf("Start program...\n\n \tAnalyze \"%s\"", io_filename);
+		
+		yydebug = 0;
+		yyin = fopen(io_filename,"r");
+		if (!yyin)
+		{
+			printf("\n[ERROR] Couldn't open file with table of property grammar.\n");
+			system("pause");
+		}
+		else
+		{
+			debug_prop_table();
+
+			if (yyparse() == 0) 
+			{
+				printf("\n\tSyntax parse success.");
+				if (!SEM_ERROR) printf("\n\tSemantics parse success.\n");
+				else printf(ERROR_MSG);
+			}
+	
+			fclose(yyin);
+			printf("\nFinish program...\n");
+			free_prop_table(&p_table, count);
+			system("pause");
+		}
+	}
+    return 0;
+}
