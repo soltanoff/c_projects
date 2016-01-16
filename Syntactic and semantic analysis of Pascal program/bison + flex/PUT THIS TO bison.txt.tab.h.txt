@@ -1,0 +1,10 @@
+#ifndef _tab
+#define _tab
+typedef struct Table
+{
+	char* ident;
+	int prop;
+	struct Table* next;
+} table;
+typedef union { table* t; } YYSTYPE;
+#endif
