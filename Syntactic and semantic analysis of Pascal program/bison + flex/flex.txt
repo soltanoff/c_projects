@@ -1,0 +1,59 @@
+%option noyywrap
+%option yylineno
+%option never-interactive
+
+
+%{
+#include "bison.txt.tab.h"
+#include <Windows.h>
+int line_counter;
+%}
+
+Identifier 	[a-zA-Z][0-9a-zA-Z]*
+String		["].*["]
+%%
+
+var			{ yylval.t = NULL; return G_VAR; }
+:string		{ yylval.t = NULL; return G_STR; }
+:integer	{ yylval.t = NULL; return G_INT; }
+
+begin		{ yylval.t = NULL; return G_BEGIN; }
+end			{ yylval.t = NULL; return G_END; }
+if			{ yylval.t = NULL; return G_IF; }
+then		{ yylval.t = NULL; return G_THEN; }
+else		{ yylval.t = NULL; return G_ELSE; }
+and			{ yylval.t = NULL; return G_AND; }
+or			{ yylval.t = NULL; return G_OR; }
+
+{Identifier}	{ 
+	yylval.t = (table *)malloc(sizeof(table));
+	yylval.t->ident = (char*)malloc(sizeof(char) * (strlen(yytext)+1));
+	strcpy(yylval.t->ident, yytext);
+	yylval.t->prop = 5;
+	yylval.t->next = NULL;
+	return G_IDENT; 
+}
+[0-9]+      { yylval.t = NULL; return G_NUMBER; }
+{String}	{ yylval.t = NULL; return G_STRING; }
+
+":="		{ yylval.t = NULL; return G_ASSIGN; }
+\;			{ yylval.t = NULL; return G_NXTL; }
+\.			{ yylval.t = NULL; return G_ENDL; }
+\,			{ yylval.t = NULL; return G_COMMA; }
+\+			{ yylval.t = NULL; return G_PLUS; }
+\-			{ yylval.t = NULL; return G_MINUS; }
+\*			{ yylval.t = NULL; return G_MULT; }
+\\			{ yylval.t = NULL; return G_DIV; }
+\(			{ yylval.t = NULL; return G_LPAR; }
+\)			{ yylval.t = NULL; return G_RPAR; }
+\=			{ yylval.t = NULL; return G_CMP; }
+\>			{ yylval.t = NULL; return G_MORE; }
+\<			{ yylval.t = NULL; return G_LESS; }
+">="		{ yylval.t = NULL; return G_CMORE; }
+"<="		{ yylval.t = NULL; return G_CLESS; }
+
+[ ]			{ yylval.t = NULL; return G_SPACE; }
+[ |\t]*		;
+[\n]*		{ line_counter++; };
+
+%%
