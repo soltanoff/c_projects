@@ -1,0 +1,9 @@
+var
+	i:integer;
+	b:integer;
+	s:string;
+begin
+	if i>0 then s:=5; else i:=4;
+	i:="this is string";
+	i:=i*b\(122-67*i)+b;
+nd.
